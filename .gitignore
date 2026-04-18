@@ -1,0 +1,15 @@
+# Dependency directories
+node_modules/
+
+# Build directory
+dist/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+
+# Cache
+.eslintcache
+node_modules/.cache/
