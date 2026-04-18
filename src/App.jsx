@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Heart, Layers, Maximize2, RefreshCcw, SwatchBook } from 'lucide-react';
 
@@ -25,7 +25,7 @@ const MODE_OPTIONS = [
     id: 'blend',
     icon: <SwatchBook size={18} />,
     label: 'Blend',
-    helper: 'Difference blending',
+    helper: 'Calculated color mix',
   },
   {
     id: 'snap',
@@ -36,8 +36,55 @@ const MODE_OPTIONS = [
 ];
 
 const BUBBLE_SIZE = 176;
+const BUBBLE_RADIUS = BUBBLE_SIZE / 2;
 
 const generateHex = () => `#${Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0').toUpperCase()}`;
+
+const hexToRgb = (hex) => ({
+  r: parseInt(hex.slice(1, 3), 16),
+  g: parseInt(hex.slice(3, 5), 16),
+  b: parseInt(hex.slice(5, 7), 16),
+});
+
+const rgbToHex = ({ r, g, b }) => `#${
+  [r, g, b].map((value) => Math.round(value).toString(16).padStart(2, '0')).join('').toUpperCase()
+}`;
+
+const mixColors = (firstColor, secondColor) => {
+  const first = hexToRgb(firstColor);
+  const second = hexToRgb(secondColor);
+
+  return rgbToHex({
+    r: (first.r + second.r) / 2,
+    g: (first.g + second.g) / 2,
+    b: (first.b + second.b) / 2,
+  });
+};
+
+const getBlendPatches = (colors) => {
+  const patches = [];
+
+  for (let firstIndex = 0; firstIndex < colors.length; firstIndex += 1) {
+    for (let secondIndex = firstIndex + 1; secondIndex < colors.length; secondIndex += 1) {
+      const first = colors[firstIndex];
+      const second = colors[secondIndex];
+      const distance = Math.hypot(first.x - second.x, first.y - second.y);
+
+      if (distance < BUBBLE_SIZE) {
+        patches.push({
+          id: `${first.id}-${second.id}`,
+          first,
+          second,
+          color: mixColors(first.color, second.color),
+          x: (first.x + second.x) / 2,
+          y: (first.y + second.y) / 2,
+        });
+      }
+    }
+  }
+
+  return patches;
+};
 
 const makeBubbles = () => Array.from({ length: 5 }).map((_, index) => ({
   id: Date.now() + index,
@@ -50,8 +97,10 @@ export default function App() {
   const [bgColor, setBgColor] = useState('white');
   const [interactMode, setInteractMode] = useState('stack');
   const [bubbles, setBubbles] = useState(() => makeBubbles());
+  const dragStart = useRef({});
 
   const shuffleAll = () => setBubbles(makeBubbles());
+  const blendPatches = interactMode === 'blend' ? getBlendPatches(bubbles) : [];
 
   const updateSingle = (id) => {
     setBubbles((prev) => prev.map((bubble) => (
@@ -137,13 +186,24 @@ export default function App() {
               key={bubble.id}
               drag
               dragMomentum={false}
+              onDragStart={() => {
+                dragStart.current[bubble.id] = { x: bubble.x, y: bubble.y };
+              }}
+              onDragEnd={(_, info) => {
+                const start = dragStart.current[bubble.id] ?? { x: bubble.x, y: bubble.y };
+                const nextX = start.x + info.offset.x;
+                const nextY = start.y + info.offset.y;
+
+                setBubbles((prev) => prev.map((item) => (
+                  item.id === bubble.id ? { ...item, x: nextX, y: nextY } : item
+                )));
+              }}
               initial={{ scale: 1, opacity: 1, x: bubble.x, y: bubble.y }}
               animate={{ scale: 1, opacity: 1, x: bubble.x, y: bubble.y }}
               whileDrag={{ scale: 1.06, zIndex: 100 }}
               style={{
                 backgroundColor: bubble.color,
                 color: bubble.color,
-                mixBlendMode: interactMode === 'blend' ? 'difference' : 'normal',
                 width: BUBBLE_SIZE,
                 height: BUBBLE_SIZE,
               }}
@@ -176,6 +236,35 @@ export default function App() {
             </motion.div>
           ))}
         </AnimatePresence>
+
+        {blendPatches.map((patch) => (
+          <div
+            key={patch.id}
+            className="pointer-events-none absolute inset-0 z-40"
+            style={{
+              clipPath: `circle(${BUBBLE_RADIUS}px at calc(50% + ${patch.first.x}px) calc(50% + ${patch.first.y}px))`,
+            }}
+          >
+            <div
+              className="absolute inset-0 flex items-center justify-center"
+              style={{
+                backgroundColor: patch.color,
+                clipPath: `circle(${BUBBLE_RADIUS}px at calc(50% + ${patch.second.x}px) calc(50% + ${patch.second.y}px))`,
+              }}
+            >
+              <span
+                className="absolute bg-black/90 px-2 py-1 text-sm font-black uppercase text-[#eafffb]"
+                style={{
+                  left: `calc(50% + ${patch.x}px)`,
+                  top: `calc(50% + ${patch.y}px)`,
+                  transform: 'translate(-50%, -50%)',
+                }}
+              >
+                {patch.color}
+              </span>
+            </div>
+          </div>
+        ))}
       </motion.div>
 
       <button
